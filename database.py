@@ -33,6 +33,11 @@ def init_db():
             updated_at TEXT
         )
     ''')
+    # Thêm cột ai_presence_status nếu chưa tồn tại
+    cursor.execute("PRAGMA table_info(conversations)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if 'ai_presence_status' not in columns:
+        cursor.execute("ALTER TABLE conversations ADD COLUMN ai_presence_status TEXT DEFAULT 'online'")
     
     # Table messages
     cursor.execute('''
@@ -119,6 +124,7 @@ def get_all_conversations():
         SELECT c.*, 
                (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY timestamp DESC LIMIT 1) as last_message,
                (SELECT timestamp FROM messages WHERE conversation_id = c.id ORDER BY timestamp DESC LIMIT 1) as last_message_time,
+               (SELECT role FROM messages WHERE conversation_id = c.id ORDER BY timestamp DESC LIMIT 1) as last_sender_role,
                (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as message_count
         FROM conversations c 
         ORDER BY c.updated_at DESC
@@ -139,7 +145,7 @@ def update_conversation(conv_id, **kwargs):
     conn = get_db()
     cursor = conn.cursor()
     
-    allowed_fields = ['name', 'ai_name', 'user_name', 'mood']
+    allowed_fields = ['name', 'ai_name', 'user_name', 'mood', 'ai_presence_status']
     updates = []
     values = []
     
@@ -157,6 +163,17 @@ def update_conversation(conv_id, **kwargs):
             values
         )
         conn.commit()
+    conn.close()
+
+def update_conversation_presence(conv_id, status):
+    conn = get_db()
+    cursor = conn.cursor()
+    now = get_gmt7_now()
+    cursor.execute(
+        'UPDATE conversations SET ai_presence_status = ?, updated_at = ? WHERE id = ?',
+        (status, now, conv_id)
+    )
+    conn.commit()
     conn.close()
 
 def delete_conversation(conv_id):
